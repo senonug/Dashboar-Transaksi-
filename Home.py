@@ -93,6 +93,80 @@ elif menu == "Pelanggan AMR":
             active_p_lost_threshold_i = st.number_input("Ambang Arus (Ampere)", value=3)
 
         st.success("✅ Semua threshold anomali telah disiapkan.")
+
+        st.markdown("### 🧪 Deteksi Anomali Otomatis")
+
+        hasil_deteksi = []
+
+        for idx, row in df.iterrows():
+            idpel = row.get("LOCATION_CODE", f"Row-{idx}")
+            deteksi = []
+
+            # Tegangan Drop: Salah satu Lx tegangannya < threshold dan arusnya besar
+            for phase in ["L1", "L2", "L3"]:
+                if row.get(f"VOLTAGE_{phase}", 999) < v_drop_threshold and row.get(f"CURRENT_{phase}", 0) > 5:
+                    deteksi.append("Tegangan Drop")
+                    break
+
+            # Tegangan Hilang: Phase 3 dan salah satu Lx tegangan = 0 dan arus > ambang
+            if row.get("PHASE_COUNT") == 3:
+                for phase in ["L1", "L2", "L3"]:
+                    if row.get(f"VOLTAGE_{phase}", 1) == 0 and row.get(f"CURRENT_{phase}", 0) > v_lost_threshold_i:
+                        deteksi.append("Tegangan Hilang")
+                        break
+
+            # Cos Phi Kecil (khusus tak langsung)
+            if row.get("METER_TYPE") == "TI":  # anggap TI = tak langsung
+                for phase in ["L1", "L2", "L3"]:
+                    if row.get(f"COS_PHI_{phase}", 1) < cos_phi_threshold:
+                        deteksi.append("Cos Phi Kecil")
+                        break
+
+            # Arus Hilang: arus sekarang kecil tapi pernah besar – asumsikan CURRENT_MAX_{phase}
+            for phase in ["L1", "L2", "L3"]:
+                if row.get(f"CURRENT_{phase}", 10) < i_hilang_threshold and row.get(f"CURRENT_MAX_{phase}", 0) > 10:
+                    deteksi.append("Arus Hilang")
+                    break
+
+            # Arus Netral > 130% Arus Maksimum
+            imax = max(row.get("CURRENT_L1", 0), row.get("CURRENT_L2", 0), row.get("CURRENT_L3", 0))
+            if row.get("CURRENT_N", 0) > 1.3 * imax and row.get("CURRENT_N", 0) > in_more_imax_threshold:
+                deteksi.append("Arus Netral > 130% Arus Maks")
+
+            # Over Current
+            if imax > over_current_threshold:
+                deteksi.append("Over Current")
+
+            # Over Voltage
+            vmax = max(row.get("VOLTAGE_L1", 0), row.get("VOLTAGE_L2", 0), row.get("VOLTAGE_L3", 0))
+            if vmax > over_voltage_threshold:
+                deteksi.append("Over Voltage")
+
+            # Reverse Power
+            p_total = row.get("ACTIVE_POWER_TOTAL", 999)
+            i_max = max(row.get("CURRENT_L1", 0), row.get("CURRENT_L2", 0), row.get("CURRENT_L3", 0))
+            if p_total < reverse_power_threshold_p and i_max > reverse_power_threshold_i:
+                deteksi.append("Reverse Power")
+
+            # Arus Inbalance (khusus TI)
+            if row.get("METER_TYPE") == "TI":
+                currents = [row.get("CURRENT_L1", 0), row.get("CURRENT_L2", 0), row.get("CURRENT_L3", 0)]
+                avg_i = sum(currents) / 3
+                deviasi = max([abs(i - avg_i) / avg_i * 100 if avg_i else 0 for i in currents])
+                if deviasi >= unbalance_i_threshold_pct and any(i > 5 for i in currents):
+                    deteksi.append("Arus Inbalance")
+
+            # Active Power Lost
+            if all(row.get(f"ACTIVE_POWER_{ph}", 0) == 0 for ph in ["L1", "L2", "L3"]) and any(row.get(f"CURRENT_{ph}", 0) > active_p_lost_threshold_i for ph in ["L1", "L2", "L3"]):
+                deteksi.append("Active Power Lost")
+
+            hasil_deteksi.append({
+                "IDPEL": idpel,
+                "Anomali Terdeteksi": ", ".join(deteksi) if deteksi else "-"
+            })
+
+        df_hasil = pd.DataFrame(hasil_deteksi)
+        st.dataframe(df_hasil)
 elif menu == "Intra kWh P2TL":
     st.header("📥 Upload Data Intra kWh P2TL")
     file = st.file_uploader("Unggah File Data Intra kWh P2TL", type=["csv", "xlsx"])
