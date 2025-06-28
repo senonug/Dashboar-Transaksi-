@@ -46,7 +46,7 @@ elif menu == "Pelanggan AMR":
     file = st.file_uploader("Unggah File Data Instant AMR", type=["csv", "xlsx"])
     path = upload_and_save(file, os.path.join(data_dir, "amr"))
     if path:
-        df = pd.read_csv(path) if path.endswith(".csv") else pd.read_excel(path)
+        df = pd.read_excel(path)
         st.dataframe(df)
 
         st.markdown("### ⚙️ Pengaturan Threshold Anomali")
